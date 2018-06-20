@@ -1,5 +1,8 @@
 #include <stdio.h>
 #include <sys/mman.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #define FONTDATAMAX 4096
 
@@ -4615,6 +4618,13 @@ static const unsigned char fontdata_8x16[FONTDATAMAX] = {
 
 };
 
+/*
+* 显示汉字
+*/
+void lcd_put_chinese(int x,int y,unsigned char *str)
+{
+		
+}
 
 void lcd_put_ascii(int x,int y,unsigned char c)
 {
@@ -4628,11 +4638,17 @@ void lcd_put_ascii(int x,int y,unsigned char c)
 		{
 			if(byte & (1 << j))
 			{
-				
+				/*
+				* 白色
+				*/
+				lcd_pit_pixel(x+7-j,y+i,0xffffff);
 			}
 			else
 			{
-				
+				/*
+				* 黑色
+				*/
+				lcd_pit_pixel(x+7-j,y+i,0x0);
 			}
 		}
 	}
@@ -4646,6 +4662,10 @@ int main(int argc,char *argv[])
 	struct fb_fix_screeninfo fix;		/* Current fix */
 	int screen_size;
 	unsigned char *fbmem;
+	unsigned char *hzkmem;
+	int fd_hzk16;
+	struct stat hzk_stat;
+	
 	unsigned char str[] = "中";
 	
 	fd_fb = open("/dev/fb0",O_RDWR);
@@ -4672,9 +4692,32 @@ int main(int argc,char *argv[])
 	fbmem = (unsigned char *)mmap(NULL, screen_size, PORT_READ | PORT_WRITE ,MAP_SHARED,fd_fb ,0);
 	if((unsigned char *)-1 == fbmem)
 	{
-		printf();
+		printf("cannot mmap for fb\n");
 		return -1;
 	}
+
+	fd_hzk16 = open("HZK16",O_RDONLY);
+	if(fd_hzk16 < 0)
+	{
+		printf("cannot open HZK16\n");
+		return -1;
+	}
+
+	if(fstat(fd_hzk16,&hzk_stat))
+	{
+		printf("cannot get stat\n");
+		return -1;
+	}
+
+	hzkmem = (unsigned char *)mmap(NULL, hzk_stat, PORT_READ ,MAP_SHARED,fd_hzk16 ,0);
+	if((unsigned char *)-1 == hzkmem)
+	{
+		printf("cannot mmap for hzk16\n");
+		return -1;
+	}
+
+	/* 清屏,全部清除为黑色 */
+	memset(fbmem,0,screen_size);
 	
 	lcd_put_ascii(var.xres/2,var.yres/2,'A');
 
