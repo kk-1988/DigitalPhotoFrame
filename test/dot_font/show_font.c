@@ -4,15 +4,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-int fd_fb;
-struct fb_var_screeninfo var;	/* Current var */
-struct fb_fix_screeninfo fix;		/* Current fix */
-int screen_size;
-unsigned char *fbmem;
-unsigned char *hzkmem;
-int fd_hzk16;
-struct stat hzk_stat;
-
 #define FONTDATAMAX 4096
 
 static const unsigned char fontdata_8x16[FONTDATAMAX] = {
@@ -4627,6 +4618,60 @@ static const unsigned char fontdata_8x16[FONTDATAMAX] = {
 
 };
 
+int fd_fb;
+struct fb_var_screeninfo var;	/* Current var */
+struct fb_fix_screeninfo fix;		/* Current fix */
+int screen_size;
+unsigned char *fbmem;
+unsigned int line_width;
+unsigned int pixel_width;
+unsigned char *hzkmem;
+int fd_hzk16;
+struct stat hzk_stat;
+
+//color : 0x00RRGGBB
+void lcd_put_pixel(int x,int y,unsigned int color)
+{
+	unsigned char *pen_8 = fbmem + y*line_width + x*pixel_width;
+	unsigned short *pen_16;
+	unsigned int *pen_32;
+	unsigned int red,green,blue;
+
+	pen_16 = (unsigned short  *)pen_8;
+	pen_32 = (unsigned short *)pen_8;
+
+	switch(var.bits_per_pixel)
+	{
+		 case 8:
+		 {
+		 	*pen_8 = color;
+			break;
+		 }
+		 case 16:
+		 {
+			/*
+			* 565
+			*/
+			red = (color >> 16) & 0xff;
+			green = (color >> 8) & 0xff;
+			blue = (color >> 0) & 0xff;
+			color = ((red >> 3) << 11) | ((green >> 2) << 5) | (blue >> 3);
+			*pen_16 = color;
+			break;
+		 }
+		 case 32:
+		 {
+			*pen_32 = color;
+			break;
+		 }
+		 default:
+		 {
+			printf("cannot support\n");
+			break;
+		 }
+	}
+}
+
 /*
 * ÏÔÊ¾ºº×Ö
 */
@@ -4649,11 +4694,11 @@ void lcd_put_chinese(int x,int y,unsigned char *str)
 			{
 				if(byte & (1 << b))
 				{
-					lcd_put_pixel(x + 7 - b,y + i,0xffffff);
+					lcd_put_pixel(x + j*8 + 7 - b,y + i,0xffffff);
 				}
 				else
 				{
-					lcd_put_pixel(x + 7 - b,y + i,0x0);
+					lcd_put_pixel(x + j*8 + 7 - b,y + i,0x0);
 				}
 			}
 		}
@@ -4663,7 +4708,7 @@ void lcd_put_chinese(int x,int y,unsigned char *str)
 
 void lcd_put_ascii(int x,int y,unsigned char c)
 {
-	unsigned char *dots = &fontdata_8x16[c * 16];
+	unsigned char *dots = (unsigned char *)&fontdata_8x16[c * 16];
 	int i,j;
 	unsigned char byte;
 
@@ -4713,6 +4758,8 @@ int main(int argc,char *argv[])
 		return -1;
 	}
 
+	line_width = var.xres * var. bits_per_pixel / 8;
+	pixel_width = var. bits_per_pixel / 8;
 	screen_size = var.xres * var.yres * var. bits_per_pixel  / 8;
 
 	fbmem = (unsigned char *)mmap(NULL, screen_size, PORT_READ | PORT_WRITE ,MAP_SHARED,fd_fb ,0);
