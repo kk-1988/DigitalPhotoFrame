@@ -4,6 +4,15 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+int fd_fb;
+struct fb_var_screeninfo var;	/* Current var */
+struct fb_fix_screeninfo fix;		/* Current fix */
+int screen_size;
+unsigned char *fbmem;
+unsigned char *hzkmem;
+int fd_hzk16;
+struct stat hzk_stat;
+
 #define FONTDATAMAX 4096
 
 static const unsigned char fontdata_8x16[FONTDATAMAX] = {
@@ -4623,7 +4632,33 @@ static const unsigned char fontdata_8x16[FONTDATAMAX] = {
 */
 void lcd_put_chinese(int x,int y,unsigned char *str)
 {
-		
+	//区号,从0xA1开始
+	unsigned int area = str[0] - 0xA1	;
+	//位码,也是从0xA1开始
+	unsigned int where = str[1] - 0xA1;
+	unsigned char *dots = hzkmem +  (area * 94 + where) * 32;
+	unsigned char byte;
+
+	int i,j,b;
+	for(i = 0;i < 16; i++)
+	{
+		for(j = 0;j < 2;j++)
+		{
+			byte = dots[i * 2 + j];
+			for(b = 7;b >= 0;b--)
+			{
+				if(byte & (1 << b))
+				{
+					lcd_put_pixel(x + 7 - b,y + i,0xffffff);
+				}
+				else
+				{
+					lcd_put_pixel(x + 7 - b,y + i,0x0);
+				}
+			}
+		}
+	}
+	
 }
 
 void lcd_put_ascii(int x,int y,unsigned char c)
@@ -4656,16 +4691,7 @@ void lcd_put_ascii(int x,int y,unsigned char c)
 }
 
 int main(int argc,char *argv[])
-{
-	int fd_fb;
-	struct fb_var_screeninfo var;	/* Current var */
-	struct fb_fix_screeninfo fix;		/* Current fix */
-	int screen_size;
-	unsigned char *fbmem;
-	unsigned char *hzkmem;
-	int fd_hzk16;
-	struct stat hzk_stat;
-	
+{	
 	unsigned char str[] = "中";
 	
 	fd_fb = open("/dev/fb0",O_RDWR);
