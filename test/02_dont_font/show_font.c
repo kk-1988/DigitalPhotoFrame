@@ -4615,18 +4615,25 @@ static const unsigned char fontdata_8x16[FONTDATAMAX] = {
 
 };
 
+void lcd_put_pixel()
+{
+	
+}
+
 //显示ascii
 void lcd_put_ascii(int x,int y,unsigned char c)
 {
 	unsigned char *dots = &fontdata_8x16[c * 16];
 	int i,b;
+	unsigned char byte;
 	
 	for(i =0; i < 16; i++)
 	{
+		byte = dots[i];
 		for(b = 7;b >=0;b--)
 		{
-			if(dots[i][b])
-				printf("*");
+			if(byte & (1 << b))
+				lcd_put_pixel();
 			else
 				continue;
 		}
