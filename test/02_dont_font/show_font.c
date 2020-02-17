@@ -1,6 +1,11 @@
 #include <stdio.h>
 #include <sys/mman.h>
 #include <linux/fb.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <string.h>
 
 #define FONTDATAMAX	(4096)
 static const unsigned char fontdata_8x16[FONTDATAMAX] = {
@@ -4615,15 +4620,59 @@ static const unsigned char fontdata_8x16[FONTDATAMAX] = {
 
 };
 
-void lcd_put_pixel()
+unsigned char *p_fb_mem = NULL;
+/* 每行有多少个字节(跟像素不是一个概念) */
+unsigned int line_width;
+/* 每个像素又占用多少个字节 */
+unsigned int pixel_width;
+/* 可变信息 */
+struct fb_var_screeninfo var;
+/* 固定信息 */
+struct fb_fix_screeninfo fix;
+
+/*
+* x,y坐标，color颜色,需要根据每个像素占据多少位，我们可以计算它的位置
+* 1个像素点占据
+* color格式：0x00rrggbb
+*/
+void lcd_put_pixel(int x,int y,int color)
 {
+	unsigned char *pen_8 = p_fb_mem + y * line_width + x * pixel_width;
 	
+	/* 不同的像素宽度，用不同的变量来表示 */
+	unsigned short *pen_16 = (unsigned short *)pen_8;
+	unsigned int *pen_32 = (unsigned int *)pen_8;
+	unsigned int r,g,b;
+
+	/* 开始描点 */
+	switch (var.bits_per_pixel)
+	{
+		case 8:
+			*pen_8 = color;
+			break;
+
+		case 16:
+			/* 需要把32位的功率蓝的颜色提取出来，组装成16位的颜色(565) */
+			r = (((color >> 16) & 0xff) & 0x1f) << 11;
+			g = (((color >> 8) & 0xff) & 0x3f) << 5;
+			b = (color & 0xff ) & 0x1f;
+			*pen_16 = r | g | b;
+			break;
+
+		case 32:
+			*pen_32 = color;
+			break;
+
+		default:
+			printf("can't support this %d pixel cleass type\n",var.bits_per_pixel);
+			break;
+	}
 }
 
 //显示ascii
 void lcd_put_ascii(int x,int y,unsigned char c)
 {
-	unsigned char *dots = &fontdata_8x16[c * 16];
+	unsigned char *dots = (unsigned char *)&fontdata_8x16[c * 16];
 	int i,b;
 	unsigned char byte;
 	
@@ -4633,13 +4682,56 @@ void lcd_put_ascii(int x,int y,unsigned char c)
 		for(b = 7;b >=0;b--)
 		{
 			if(byte & (1 << b))
-				lcd_put_pixel();
+			{	
+				//0xfffffff 白色
+				lcd_put_pixel(x+7-b,y+i,0xffffff);
+			}
 			else
-				continue;
+			{
+				//0x0 黑色
+				lcd_put_pixel(x+7-b,y+i,0x0);
+			}
 		}
 	}
 }
 
+unsigned char *gp_hzk16_mem = NULL;
+
+//显示中文(前提需要先导入汉字点阵(hzk16))
+void lcd_put_chinese(int x,int y,unsigned char *str)
+{
+	//str是中文，包括2个字节，第一个字节就是区码
+	unsigned int area = str[0] - 0xA1;
+	unsigned int where = str[1] - 0xA1;
+	int i,j,b;
+	unsigned char byte;
+	//字模信息开始位置(从这里取出中文汉字)
+	unsigned char *dots =  gp_hzk16_mem + (94 * area + where) * 32;
+
+	//32个字节显示中文
+	for(i =0; i < 16; i++)
+	{
+		for(j = 0;j < 2;j++)
+		{
+			byte = dots[i*2 + j];
+			
+			for(b = 7;b >=0;b--)
+			{
+				if(byte & (1 << b))
+				{	
+					//0xfffffff 白色
+					lcd_put_pixel(x+ j * 8 + 7-b,y+i,0xffffff);
+				}
+				else
+				{
+					//0x0 黑色
+					lcd_put_pixel(x+ j * 8 + 7-b,y+i,0x0);
+				}
+			}
+		}
+	}
+}
+	
 /*
 * 提前知道：
 * 1.lcd 每个像素占多少位
@@ -4649,14 +4741,10 @@ void lcd_put_ascii(int x,int y,unsigned char c)
 int main(int argc,char *argv[])
 {
 	int fd_fb;
-	
-	/* 可变信息 */
-	struct fb_var_screeninfo var;
-	/* 固定信息 */
-	struct fb_fix_screeninfo fix;
+	int fd_hzk16;	
 	int screen_size;
-	unsigned char *p_fb_mem = NULL;
 	unsigned char str[] = "中";
+	struct stat hzk_stat_st;
 	
 	fd_fb = open("/dev/fb0",O_RDWR);
 	if(fd_fb < 0)
@@ -4679,7 +4767,15 @@ int main(int argc,char *argv[])
 		return -1;
 	} 
 
-	/* 1.占用的像素大小(多少个字节) */
+	/* 1.占用的像素大小(多少个字节) 
+	* var.xres 一行里面有多少个像素
+	*/
+	line_width = var.xres * var.bits_per_pixel / 8;
+	
+	/* 每个像素占用的字节宽度 */
+	pixel_width = var.bits_per_pixel / 8;
+
+	/* lcd 大小 */
 	screen_size = var.xres * var.yres * var.bits_per_pixel / 8;
 
 	/* 
@@ -4699,13 +4795,37 @@ int main(int argc,char *argv[])
 		return -1;
 	}
 
+	fd_hzk16 = open("./HZK16",O_RDONLY);
+	if(fd_hzk16 < 0)
+	{
+		printf("can't open HZK16\n");
+		return -1;
+	}
+
+	/* 获得HZK16大小，通过mmap进行映射，提高效率         */
+	if(fstat(fd_hzk16,&hzk_stat_st))
+	{
+		printf("can't get fstat of HZK16\n");
+		return -1;
+	}
+	
+	printf("HZK16 size %d\n",hzk_stat_st.st_size);
+	
+	gp_hzk16_mem = mmap(NULL, hzk_stat_st.st_size, PROT_READ, MAP_SHARED, fd_hzk16, 0);
+	if((signed char *)-1 == gp_hzk16_mem)
+	{
+		printf("can't mmap hzk16 mem\n");
+		return -1;
+	}
+
+	/* 清屏，先全部设为黑色 */
+	memset(p_fb_mem, 0, screen_size);
+
 	/* 显示 */
 	lcd_put_ascii(var.xres / 2,var.yres / 2,'A');
-
-	printf("chinese code:%02x %02x\n",str[0],str[1]);
-	//lcd_put_chinese(var.xres / 2 + 8,var.yres / 2,str);
-
 	
+	printf("chinese code:%02x %02x\n",str[0],str[1]);
+	lcd_put_chinese(var.xres / 2 + 8, var.yres / 2, str);
 
 	return 0;
 }
