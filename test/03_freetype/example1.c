@@ -92,7 +92,7 @@ main( int     argc,
   filename      = argv[1];                           /* first argument     */
   text          = argv[2];                           /* second argument    */
   num_chars     = strlen( text );
-  angle         = ( 25.0 / 360 ) * 3.14159 * 2;      /* use 25 degrees     */
+  angle         = ( 0.0 / 360 ) * 3.14159 * 2;      /* use 25 degrees     */
   target_height = HEIGHT;
 
   error = FT_Init_FreeType( &library );              /* initialize library */
@@ -101,10 +101,16 @@ main( int     argc,
   error = FT_New_Face( library, argv[1], 0, &face ); /* create face object */
   /* error handling omitted */
 
+#if 0
   /* use 50pt at 100dpi */
   error = FT_Set_Char_Size( face, 50 * 64, 0,
                             100, 0 );                /* set character size */
   /* error handling omitted */
+#else
+	//0 表示和前面的值一样
+  error = FT_Set_Pixel_Sizes(face,24,0);
+
+#endif  
 
   slot = face->glyph;
 
