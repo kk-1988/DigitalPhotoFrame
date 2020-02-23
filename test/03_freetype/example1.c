@@ -7,13 +7,14 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include <wchar.h>
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
 
-#define WIDTH   640
-#define HEIGHT  480
+#define WIDTH   80
+#define HEIGHT  80
 
 
 /* origin is the upper left corner */
@@ -30,6 +31,8 @@ draw_bitmap( FT_Bitmap*  bitmap,
   FT_Int  i, j, p, q;
   FT_Int  x_max = x + bitmap->width;
   FT_Int  y_max = y + bitmap->rows;
+
+  printf("x = %d, y = %d\n",x, y);
 
 
   for ( i = x, p = 0; i < x_max; i++, p++ )
@@ -81,7 +84,18 @@ main( int     argc,
   double        angle;
   int           target_height;
   int           n, num_chars;
-
+  //下面的方式比较麻烦，因为都要事先知道unicode码
+  //int           chinese_str[] = {0x97e6, 0x4e1c, 0x5c71, 0x0067};
+  //引入宽字符，然后下面直接把中文字符转换为unicode
+  //宽字符都是用4个字符来表示
+  wchar_t *chinese_str = L"韦gif";
+  unsigned int *p = (wchar_t *)chinese_str;
+  
+  //获得宽字符的长度
+  int i;
+  for(i = 0;i < wcslen(chinese_str);i++)
+  	printf("0x%x ", p[i]);
+  printf("\n");
 
   if ( argc != 3 )
   {
@@ -94,6 +108,7 @@ main( int     argc,
   num_chars     = strlen( text );
   angle         = ( 0.0 / 360 ) * 3.14159 * 2;      /* use 25 degrees     */
   target_height = HEIGHT;
+    
 
   error = FT_Init_FreeType( &library );              /* initialize library */
   /* error handling omitted */
@@ -113,6 +128,7 @@ main( int     argc,
 #endif  
 
   slot = face->glyph;
+  
 
   /* set up matrix */
   matrix.xx = (FT_Fixed)( cos( angle ) * 0x10000L );
@@ -121,17 +137,17 @@ main( int     argc,
   matrix.yy = (FT_Fixed)( cos( angle ) * 0x10000L );
 
   /* the pen position in 26.6 cartesian space coordinates; */
-  /* start at (300,200) relative to the upper left corner  */
-  pen.x = 300 * 64;
-  pen.y = ( target_height - 200 ) * 64;
+  /* start at (0,40) relative to the upper left corner  */
+  pen.x = 0 * 64;
+  pen.y = ( target_height - 40 ) * 64;
 
-  for ( n = 0; n < num_chars; n++ )
+  for ( n = 0; n < wcslen(chinese_str); n++ )
   {
     /* set transformation */
     FT_Set_Transform( face, &matrix, &pen );
 
     /* load glyph image into the slot (erase previous one) */
-    error = FT_Load_Char( face, text[n], FT_LOAD_RENDER );
+    error = FT_Load_Char( face, chinese_str[n], FT_LOAD_RENDER );
     if ( error )
       continue;                 /* ignore errors */
 
